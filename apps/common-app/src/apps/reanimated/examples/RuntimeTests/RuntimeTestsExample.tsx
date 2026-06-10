@@ -176,6 +176,7 @@ export default function RuntimeTestsExample() {
           importTest: () => {
             require('./tests/plugin/fileWorkletization.test');
             require('./tests/plugin/contextObjects.test');
+            require('./tests/plugin/jsxInWorklets.test');
             require('./tests/plugin/workletClasses.test');
             require('./tests/plugin/recursion.test');
             require('./tests/plugin/versionMismatch.test');

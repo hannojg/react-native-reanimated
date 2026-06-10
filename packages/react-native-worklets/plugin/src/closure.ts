@@ -1,7 +1,11 @@
 import type { NodePath } from '@babel/core';
 import type { Binding } from '@babel/traverse';
-import type { Identifier, ImportDeclaration } from '@babel/types';
-import { cloneNode } from '@babel/types';
+import type {
+  Identifier,
+  ImportDeclaration,
+  JSXIdentifier,
+} from '@babel/types';
+import { cloneNode, react } from '@babel/types';
 
 import { globals } from './globals';
 import {
@@ -32,7 +36,7 @@ export function getClosure(
         typePath.skip();
       },
       ReferencedIdentifier(idPath) {
-        if (idPath.isJSXIdentifier()) {
+        if (shouldSkipJSXIdentifier(idPath, state)) {
           return;
         }
 
@@ -56,6 +60,10 @@ export function getClosure(
         }
 
         if (!binding) {
+          if (idPath.isJSXIdentifier()) {
+            return;
+          }
+
           /**
            * The variable is unbound - it's either a mistake or implicit capture
            * from the global scope. In this case we have to avoid capturing
@@ -66,6 +74,10 @@ export function getClosure(
           }
           capturedNames.add(name);
           closureVariables.push(cloneNode(idPath.node as Identifier, true));
+          return;
+        }
+
+        if (shouldSkipBundleModeJSXIdentifier(idPath, binding, state)) {
           return;
         }
 
@@ -121,4 +133,53 @@ export function getClosure(
     libraryBindingsToImport,
     relativeBindingsToImport,
   };
+}
+
+function shouldSkipJSXIdentifier(
+  idPath: NodePath<Identifier | JSXIdentifier>,
+  state: WorkletsPluginPass
+): boolean {
+  if (!idPath.isJSXIdentifier()) {
+    return false;
+  }
+
+  if (!state.opts.bundleMode) {
+    return true;
+  }
+
+  const isJsxMemberProperty =
+    idPath.parentPath.isJSXMemberExpression() &&
+    idPath.parentKey === 'property';
+
+  return isJsxMemberProperty || react.isCompatTag(idPath.node.name);
+}
+
+function shouldSkipBundleModeJSXIdentifier(
+  idPath: NodePath<Identifier | JSXIdentifier>,
+  binding: Binding,
+  state: WorkletsPluginPass
+): boolean {
+  if (!idPath.isJSXIdentifier()) {
+    return false;
+  }
+
+  if (!isImport(binding)) {
+    return true;
+  }
+
+  if (isImportRelative(binding)) {
+    const isAllowed = isAllowedForRelativeImports(
+      state.filename,
+      state.opts.workletizableModules
+    );
+    return !isAllowed;
+  }
+
+  const parentPath = binding.path.parentPath as NodePath<ImportDeclaration>;
+  const source = parentPath.node.source.value;
+  const isAllowed = isWorkletizableModule(
+    source,
+    state.opts.workletizableModules
+  );
+  return !isAllowed;
 }
